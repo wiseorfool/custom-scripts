@@ -3,20 +3,26 @@ Hooks.once("init", () => {
 });
 
 Hooks.on("getSceneControlButtons", (controls) => {
-  // Push a brand new, independent button straight into the main toolbar array
-  controls.push({
-    name: "compendium-browser-main",
-    title: "Open Compendium Browser",
-    layer: "controls",       // Keeps it on the main UI layer
-    icon: "fas fa-atlas",    // The book/atlas icon
-    visible: true,           // Ensures players and GM can see it
-    activeTool: "",          // Keeps it from getting stuck in an "active" state
-    onClick: () => {
-      new dnd5e.applications.CompendiumBrowser().render({ force: true });
-    },
-    button: true,            // Tells Foundry this is an instant click action
-    tools: []                // Leaves sub-menus blank so it acts as a standalone button
-  });
+  const compendiumControl = {
+    name: "compendium",
+    title: "Compendium",
+    layer: "controls",
+    icon: "fas fa-atlas",
+    visible: true,
+    tools: [
+      {
+        name: "browser",
+        title: "Open Compendium Browser",
+        icon: "fas fa-book",
+        onClick: () => {
+          // Check actual dnd5e app path here
+          new dnd5e.applications.CompendiumBrowser().render(true);
+        },
+        button: true
+      }
+    ]
+  };
+  controls.push(compendiumControl);
 });
 
 
