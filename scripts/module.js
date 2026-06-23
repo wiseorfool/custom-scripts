@@ -2,7 +2,7 @@ Hooks.once("init", () => {
   CONFIG.DND5E.restTypes.long.exhaustionDelta = 0;
 });
 
-Hooks.once("ready", () => {
+
   Hooks.on("getSceneControlButtons", (controls) => {
     const toolsControl = controls.find(c => c.name === "tools");
     
@@ -19,4 +19,3 @@ Hooks.once("ready", () => {
       });
     }
   });
-});
