@@ -49,8 +49,10 @@ Hooks.once("ready", () => {
         onClick: () => {
           console.log("Button clicked!");
           // Your code here
+          window.compendiumBrowserInstance.render(true);
         },
-        button: true
+        button: true,
+        activeTool: "myCustomButton" // Add this to make your button visible
       });
     }
   });
