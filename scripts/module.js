@@ -37,15 +37,21 @@ Hooks.once("init", () => {
 
 
 
+Hooks.once("ready", () => {
   Hooks.on("getSceneControlButtons", (controls) => {
     const toolsControl = controls.find(c => c.name === "tools");
-
+    
     if (toolsControl) {
-      toolsControl.tools["myCustomButton"] = {
+      toolsControl.tools.push({
+        name: "myCustomButton",
         title: "My Custom Tool",
         icon: "fas fa-star",
-        button: true,
-        onClick: () => console.log("Button clicked!")
-      };
+        onClick: () => {
+          console.log("Button clicked!");
+          // Your code here
+        },
+        button: true
+      });
     }
   });
+});
