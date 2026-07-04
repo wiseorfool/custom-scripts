@@ -1,21 +1,19 @@
 const MODULE_ID = "custom-scripts";
 
 /**
- * A helper function to apply the exhaustion setting.
- * This reads the setting and modifies the D&D 5e configuration accordingly.
+ * Apply exhaustion recovery settings for D&D5e v3.x+ and legacy versions.
  */
 const applyExhaustionSetting = () => {
   const disableRecovery = game.settings.get(MODULE_ID, "disableExhaustionRecovery");
 
-  // For dnd5e system v3.x+, the default is to recover 1 exhaustion.
-  // For older systems, the default exhaustionDelta is -1.
   const exhaustionValue = disableRecovery ? 0 : 1;
   const exhaustionDeltaValue = disableRecovery ? 0 : -1;
 
-  // For dnd5e system v3.x+
+  // D&D5e v3.x+ (Foundry 11–14)
   if (foundry.utils.isNewerVersion("3.0.0", game.system.version)) {
     CONFIG.DND5E.restRules.longRest.exhaustion = exhaustionValue;
-  } else { // Fallback for older dnd5e systems
+  } else {
+    // Legacy fallback
     CONFIG.DND5E.restTypes.long.exhaustionDelta = exhaustionDeltaValue;
   }
 };
@@ -24,7 +22,7 @@ Hooks.once("init", () => {
   // Exhaustion setting
   game.settings.register(MODULE_ID, "disableExhaustionRecovery", {
     name: "Disable Exhaustion Recovery on Long Rest",
-    hint: "If checked, characters will not recover a level of exhaustion after a long rest. Requires a reload to apply.",
+    hint: "Characters will not recover exhaustion on long rest. Reload required.",
     scope: "world",
     config: true,
     type: Boolean,
@@ -40,6 +38,7 @@ Hooks.once("init", () => {
     type: String,
     default: "Critical",
   });
+
   game.settings.register(MODULE_ID, "criticalConditionIcon", {
     name: "Critical Condition Icon",
     scope: "world",
@@ -49,108 +48,165 @@ Hooks.once("init", () => {
     filePicker: "image"
   });
 
-  // Bloodied Condition settings
-  game.settings.register(MODULE_ID, "bloodiedConditionName", {
-    name: "Bloodied Condition Name",
-    scope: "world",
-    config: true,
-    type: String,
-    default: "Bloodied",
-  });
-  game.settings.register(MODULE_ID, "bloodiedConditionIcon", {
-    name: "Bloodied Condition Icon",
+  // Bloodied Condition icon settings (per actor type)
+  game.settings.register(MODULE_ID, "bloodiedConditionIconPC", {
+    name: "Bloodied Icon (PC)",
     scope: "world",
     config: true,
     type: String,
     default: "icons/svg/blood.svg",
     filePicker: "image"
   });
-  
-  game.settings.register(MODULE_ID, "enableBloodiedAt50", {
-    name: "Enable Bloodied at 50% HP",
-    hint: "If checked, the bloodied condition will be applied at 50% HP.",
+
+  game.settings.register(MODULE_ID, "bloodiedConditionIconNPC", {
+    name: "Bloodied Icon (NPC)",
+    scope: "world",
+    config: true,
+    type: String,
+    default: "icons/svg/blood.svg",
+    filePicker: "image"
+  });
+
+  // Bloodied override + thresholds
+  game.settings.register(MODULE_ID, "enableBloodiedOverride", {
+    name: "Enable Bloodied Icon Override",
+    hint: "If checked, the module will change the Bloodied icon instead of adding its own effect.",
     scope: "world",
     config: true,
     type: Boolean,
-    default: false,
+    default: true,
   });
 
-  // Apply the setting on initialization
+  game.settings.register(MODULE_ID, "bloodiedThreshold", {
+    name: "Bloodied Threshold (%)",
+    hint: "Above this HP%, Bloodied will be removed (if override removal is enabled).",
+    scope: "world",
+    config: true,
+    type: Number,
+    default: 50,
+  });
+
+  // Critical threshold + auto-removal
+  game.settings.register(MODULE_ID, "criticalThreshold", {
+    name: "Critical Threshold (%)",
+    hint: "At or below this HP%, Critical is applied and Bloodied is removed.",
+    scope: "world",
+    config: true,
+    type: Number,
+    default: 25,
+  });
+
+  game.settings.register(MODULE_ID, "autoRemoveCriticalAboveThreshold", {
+    name: "Auto-Remove Critical Above Threshold",
+    hint: "Remove Critical when HP rises above the Critical threshold.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, "autoRemoveBloodiedAboveThreshold", {
+    name: "Auto-Remove Bloodied Above Threshold",
+    hint: "Remove Bloodied when HP rises above the Bloodied threshold.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
+  });
+
+  // Apply exhaustion rules
   applyExhaustionSetting();
 });
 
+/**
+ * HP-based condition automation:
+ * - Uses D&D5e's own Bloodied condition, only changes icon.
+ * - Removes Bloodied below Critical threshold.
+ * - Applies/removes custom Critical condition.
+ */
 Hooks.on("updateActor", async (actor, update) => {
-    if (!update.system?.attributes?.hp) {
-        return;
-    }
+  if (!update.system?.attributes?.hp) return;
 
-    const hp = actor.system.attributes.hp.value;
-    const maxHp = actor.system.attributes.hp.max;
-    const hpPercentage = maxHp > 0 ? (hp / maxHp) * 100 : 0;
+  const hp = actor.system.attributes.hp.value;
+  const maxHp = actor.system.attributes.hp.max;
+  const hpPct = maxHp > 0 ? (hp / maxHp) * 100 : 0;
 
-    const criticalName = game.settings.get(MODULE_ID, "criticalConditionName");
-    const criticalIcon = game.settings.get(MODULE_ID, "criticalConditionIcon");
-    const bloodiedName = game.settings.get(MODULE_ID, "bloodiedConditionName");
-    const bloodiedIcon = game.settings.get(MODULE_ID, "bloodiedConditionIcon");
-    const enableBloodied = game.settings.get(MODULE_ID, "enableBloodiedAt50");
+  const criticalName = game.settings.get(MODULE_ID, "criticalConditionName");
+  const criticalIcon = game.settings.get(MODULE_ID, "criticalConditionIcon");
 
-    const criticalEffectData = {
+  const enableBloodiedOverride = game.settings.get(MODULE_ID, "enableBloodiedOverride");
+  const bloodiedThreshold = game.settings.get(MODULE_ID, "bloodiedThreshold");
+  const criticalThreshold = game.settings.get(MODULE_ID, "criticalThreshold");
+  const autoRemoveCriticalAbove = game.settings.get(MODULE_ID, "autoRemoveCriticalAboveThreshold");
+  const autoRemoveBloodiedAbove = game.settings.get(MODULE_ID, "autoRemoveBloodiedAboveThreshold");
+
+  const bloodiedIconPC = game.settings.get(MODULE_ID, "bloodiedConditionIconPC");
+  const bloodiedIconNPC = game.settings.get(MODULE_ID, "bloodiedConditionIconNPC");
+
+  // Existing D&D5e Bloodied effect (by label)
+  const bloodiedEffect = actor.effects.find(e => e.label === "Bloodied");
+
+  // Custom Critical effect
+  const criticalEffect = actor.effects.find(e => e.flags[MODULE_ID]?.condition === "critical");
+
+  // Dead → remove both
+  if (hp <= 0) {
+    if (criticalEffect) await actor.deleteEmbeddedDocuments("ActiveEffect", [criticalEffect.id]);
+    if (bloodiedEffect) await actor.deleteEmbeddedDocuments("ActiveEffect", [bloodiedEffect.id]);
+    return;
+  }
+
+  // Critical at or below threshold
+  if (hpPct <= criticalThreshold) {
+    // Remove Bloodied when Critical applies
+    if (bloodiedEffect) await actor.deleteEmbeddedDocuments("ActiveEffect", [bloodiedEffect.id]);
+
+    if (!criticalEffect) {
+      await actor.createEmbeddedDocuments("ActiveEffect", [{
         label: criticalName,
         icon: criticalIcon,
-        flags: { [MODULE_ID]: { condition: 'critical' } }
-    };
-
-    const bloodiedEffectData = {
-        label: bloodiedName,
-        icon: bloodiedIcon,
-        flags: { [MODULE_ID]: { condition: 'bloodied' } }
-    };
-
-    const hasCritical = actor.effects.find(e => e.flags[MODULE_ID]?.condition === 'critical');
-    const hasBloodied = actor.effects.find(e => e.flags[MODULE_ID]?.condition === 'bloodied');
-
-    if (hp <= 0) {
-        if (hasCritical) await actor.deleteEmbeddedDocuments("ActiveEffect", [hasCritical.id]);
-        if (hasBloodied) await actor.deleteEmbeddedDocuments("ActiveEffect", [hasBloodied.id]);
-        return;
+        flags: { [MODULE_ID]: { condition: "critical" } }
+      }]);
     }
+  } else if (autoRemoveCriticalAbove && criticalEffect) {
+    // Remove Critical when HP rises above threshold
+    await actor.deleteEmbeddedDocuments("ActiveEffect", [criticalEffect.id]);
+  }
 
-    // Critical Condition at 25%
-    if (hpPercentage <= 25) {
-        if (!hasCritical) await actor.createEmbeddedDocuments("ActiveEffect", [criticalEffectData]);
-    } else {
-        if (hasCritical) await actor.deleteEmbeddedDocuments("ActiveEffect", [hasCritical.id]);
-    }
+  // Bloodied icon override (only when Bloodied exists and HP > critical threshold)
+  if (enableBloodiedOverride && bloodiedEffect && hpPct > criticalThreshold) {
+    const isNPC = actor.type === "npc";
+    const desiredIcon = isNPC ? bloodiedIconNPC : bloodiedIconPC;
 
-    // Optional Bloodied Condition at 50%
-    if (enableBloodied) {
-        if (hpPercentage <= 50 && hpPercentage > 25) {
-            if (!hasBloodied) await actor.createEmbeddedDocuments("ActiveEffect", [bloodiedEffectData]);
-        } else {
-            if (hasBloodied) await actor.deleteEmbeddedDocuments("ActiveEffect", [hasBloodied.id]);
-        }
-    } else { // If bloodied is not enabled, make sure to remove it if it exists
-        if (hasBloodied) await actor.deleteEmbeddedDocuments("ActiveEffect", [hasBloodied.id]);
+    if (bloodiedEffect.icon !== desiredIcon) {
+      await bloodiedEffect.update({ icon: desiredIcon });
     }
+  }
+
+  // Optional: remove Bloodied above configured threshold
+  if (autoRemoveBloodiedAbove && bloodiedEffect && hpPct > bloodiedThreshold) {
+    await actor.deleteEmbeddedDocuments("ActiveEffect", [bloodiedEffect.id]);
+  }
 });
 
+/**
+ * SceneControls button injection for Foundry 14:
+ * Adds a Compendium Browser button to the Tools controls.
+ */
 Hooks.once("ready", () => {
   Hooks.on("getSceneControlButtons", (controls) => {
-    const toolsControl = controls.find(c => c.name === "tools");
-    if (toolsControl) {
-      toolsControl.tools.push({
-        name: "compendium-browser-button",
-        title: "Compendium Browser",
-        icon: "fas fa-atlas",
-        onClick: () => {
-          if (window.compendiumBrowserInstance) {
-            window.compendiumBrowserInstance.render(true);
-          } else {
-            ui.notifications.warn("Compendium Browser not available.");
-          }
-        },
-        button: true
-      });
-    }
+    const groups = controls.controls;
+    if (!Array.isArray(groups)) return;
+
+    const toolsControl = groups.find(g => g.name === "tools");
+    if (!toolsControl) return;
+
+    toolsControl.tools.push({
+      name: "compendium-browser-button",
+      title: "Compendium Browser",
+      icon: "fas fa-atlas",
+      onClick: () => game.dnd5e.apps.compendiumBrowser.render(true),
+      button: true
+    });
   });
 });
