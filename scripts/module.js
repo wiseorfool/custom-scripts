@@ -210,3 +210,61 @@ Hooks.once("ready", () => {
     });
   });
 });
+
+/**
+ * Updates all tokens of an actor on the current scene to match the prototype token settings.
+ * @param {Actor} actor The actor document to use for the update.
+ */
+async function updateSceneTokens(actor) {
+  if (!actor) return;
+
+  const tokens = actor.getActiveTokens();
+  if (!tokens.length) {
+    ui.notifications.info(`No active tokens for "${actor.name}" on the current scene.`);
+    return;
+  }
+
+  const updates = tokens.map(token => {
+    const updateData = foundry.utils.deepClone(actor.prototypeToken);
+    delete updateData.x;
+    delete updateData.y;
+    updateData._id = token.id;
+    return updateData;
+  });
+
+  await canvas.scene.updateEmbeddedDocuments("Token", updates);
+  ui.notifications.info(`Updated ${tokens.length} token(s) for "${actor.name}".`);
+}
+
+/**
+ * Adds a context menu option to the Actor Directory to apply prototype token settings to scene tokens.
+ * @param {object[]} contextOptions The array of context menu options.
+ */
+function addUpdateSceneTokensContext(contextOptions) {
+  if (!game.user.isGM) return;
+
+  contextOptions.push({
+    name: `${MODULE_ID}.apply-prototype-to-scene`,
+    callback: (li) => {
+      const docId = li.data?.documentId
+        ?? li.data?.actorId
+        ?? li.dataset?.entryId
+        ?? li.dataset?.documentId
+        ?? li.dataset?.actorId
+        ?? li.dataset?.entityId;
+      if (docId) {
+        const doc = game.actors.get(docId);
+        console.debug(`Updating ${doc.name} scene tokens for:`, doc);
+        updateSceneTokens(doc);
+      }
+    },
+    icon: '<i class="fas fa-user-circle"></i>',
+    condition: () => {
+      return game.user.can("TOKEN_CREATE");
+    },
+  });
+}
+
+Hooks.on("getActorDirectoryEntryContext", (html, contextOptions) => {
+  addUpdateSceneTokensContext(contextOptions);
+});
