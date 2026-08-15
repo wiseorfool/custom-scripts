@@ -295,7 +295,7 @@ Hooks.once("init", () => {
     config: true,    // Shows up in the Settings window
     type: Number,
     default: 12,
-    onChange: () => canvas.tokens?.refresh() // Refresh map when changed
+    onChange: () => canvas.tokens?.draw() // Refresh map when changed
   });
 
   // Add a toggle setting to show "Current HP" vs "Current / Max HP".
@@ -306,7 +306,7 @@ Hooks.once("init", () => {
     config: true,
     type: Boolean,
     default: true,
-    onChange: () => canvas.tokens?.refresh()
+    onChange: () => canvas.tokens?.draw()
   });
 
   // Turn on our custom drawing instructions
