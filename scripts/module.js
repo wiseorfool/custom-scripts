@@ -278,21 +278,21 @@ class MyTool extends Application {
 }
 
 // Foundry v14 expects scene-control tools as an array of tool objects.
-Hooks.on("getSceneControlButtons", controls => {
-  if (!controls.tokens?.tools) return;
+Hooks.on("getSceneControlButtons", (controls) => {
+  if (!game.user?.isGM) return;
 
-  controls.tokens.tools.push({
-    name: "myTool",
-    title: "MyTool.Title",
-    icon: "fa-solid fa-wrench",
-    visible: game.user.isGM,
-    onClick: () => {
-      const existing = ui.windows["my-tool"];
-      if (existing) existing.close();
-      else new MyTool().render(true);
-    }
-  });
+  const open = () => game.modules.get(MODULE_ID)?.api?.open();
+  const tool = {
+    name:    "compendium-tool",
+    title:   "Open Compendium Browser",
+    icon:    "fa-solid fa-feather-pointed",
+    button:  true,
+    order:   101,
+    visible: true
+    
+  };
 });
+
 
 // ========================================================================== //
 //
