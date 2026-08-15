@@ -256,7 +256,7 @@ Hooks.on("updateActor", async (actor, update) => {
 //
 // ========================================================================== //
 
-Add a button tool at the bottom of the Token SceneControl that opens or closes an Application.
+// Add a button tool at the bottom of the Token SceneControl that opens or closes an Application.
 Hooks.on("getSceneControlButtons", controls => {
   controls.tokens.tools.myTool = {
     name: "myTool",
