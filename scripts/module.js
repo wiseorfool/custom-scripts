@@ -256,23 +256,21 @@ Hooks.on("updateActor", async (actor, update) => {
 //
 // ========================================================================== //
 
-Hooks.once("ready", () => {
-  // This hook lets us add new buttons to the toolbar on the left of the screen.
-  Hooks.on("getSceneControlButtons", (controls) => {
-    // Find the "Tools" button group.
-    const toolsControl = controls.find(g => g.name === "tools");
-    if (!toolsControl) return;
-
-    // Add our new button to the list of tools.
-    toolsControl.tools.push({
-      name: "compendium-browser-button",
-      title: "Compendium Browser",
-      icon: "fas fa-atlas",
-      onClick: () => game.dnd5e.compendiumBrowser.render(true),
-      button: true,
-      visible: true // Show for all users
-    });
-  });
+Add a button tool at the bottom of the Token SceneControl that opens or closes an Application.
+Hooks.on("getSceneControlButtons", controls => {
+  controls.tokens.tools.myTool = {
+    name: "myTool",
+    title: "MyTool.Title",
+    icon: "fa-solid fa-wrench",
+    order: Object.keys(controls.tokens.tools).length,
+    button: true,
+    visible: game.user.isGM,
+    onChange: () => {
+      const existing = foundry.applications.instances.get("my-tool");
+      if ( existing ) existing.close();
+      else new MyTool().render({force: true});
+    }
+  };
 });
 
 // ========================================================================== //
