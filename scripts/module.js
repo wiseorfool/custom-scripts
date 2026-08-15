@@ -268,8 +268,9 @@ Hooks.once("ready", () => {
       name: "compendium-browser-button",
       title: "Compendium Browser",
       icon: "fas fa-atlas",
-      onClick: () => game.dnd5e.apps.compendiumBrowser.render(true),
-      button: true
+      onClick: () => game.dnd5e.compendiumBrowser.render(true),
+      button: true,
+      visible: true // Show for all users
     });
   });
 });
