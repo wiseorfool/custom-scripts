@@ -256,40 +256,18 @@ Hooks.on("updateActor", async (actor, update) => {
 //
 // ========================================================================== //
 
-class MyTool extends Application {
-  static get defaultOptions() {
-    return foundry.utils.mergeObject(super.defaultOptions, {
-      id: "my-tool",
-      title: "My Tool",
-      classes: ["my-tool"],
-      width: 420,
-      height: 300,
-      resizable: true,
-      template: `
-        <form class="flexcol">
-          <div class="form-group">
-            <label>My Tool</label>
-            <p>Tool is working.</p>
-          </div>
-        </form>
-      `
-    });
-  }
-}
-
-// Foundry v14 expects scene-control tools as an array of tool objects.
 Hooks.on("getSceneControlButtons", (controls) => {
-  if (!game.user?.isGM) return;
-
-  const open = () => game.modules.get(MODULE_ID)?.api?.open();
-  const tool = {
-    name:    "compendium-tool",
-    title:   "Open Compendium Browser",
-    icon:    "fa-solid fa-feather-pointed",
-    button:  true,
-    order:   101,
-    visible: true
-    
+  controls.tokens.tools.myTool = {
+    name: "myTool",
+    title: "MyTool.Title",
+    icon: "fa-solid fa-wrench",
+    order: Object.keys(controls.tokens.tools).length,
+    button: true,
+    visible: game.user.isGM,
+    onChange: () => {
+      // Action to perform when clicked
+      ui.notifications.info("Custom tool clicked!");
+    }
   };
 });
 
