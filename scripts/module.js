@@ -256,21 +256,42 @@ Hooks.on("updateActor", async (actor, update) => {
 //
 // ========================================================================== //
 
-// Add a button tool at the bottom of the Token SceneControl that opens or closes an Application.
+class MyTool extends Application {
+  static get defaultOptions() {
+    return foundry.utils.mergeObject(super.defaultOptions, {
+      id: "my-tool",
+      title: "My Tool",
+      classes: ["my-tool"],
+      width: 420,
+      height: 300,
+      resizable: true,
+      template: `
+        <form class="flexcol">
+          <div class="form-group">
+            <label>My Tool</label>
+            <p>Tool is working.</p>
+          </div>
+        </form>
+      `
+    });
+  }
+}
+
+// Foundry v14 expects scene-control tools as an array of tool objects.
 Hooks.on("getSceneControlButtons", controls => {
-  controls.tokens.tools.myTool = {
+  if (!controls.tokens?.tools) return;
+
+  controls.tokens.tools.push({
     name: "myTool",
     title: "MyTool.Title",
     icon: "fa-solid fa-wrench",
-    order: Object.keys(controls.tokens.tools).length,
-    button: true,
     visible: game.user.isGM,
-    onChange: () => {
-      const existing = foundry.applications.instances.get("my-tool");
-      if ( existing ) existing.close();
-      else new MyTool().render({force: true});
+    onClick: () => {
+      const existing = ui.windows["my-tool"];
+      if (existing) existing.close();
+      else new MyTool().render(true);
     }
-  };
+  });
 });
 
 // ========================================================================== //
