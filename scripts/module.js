@@ -259,14 +259,23 @@ Hooks.on("updateActor", async (actor, update) => {
 Hooks.on("getSceneControlButtons", (controls) => {
   controls.tokens.tools.myTool = {
     name: "myTool",
-    title: "MyTool.Title",
-    icon: "fa-solid fa-wrench",
+    title: "Open Compendium Browser",
+    icon: "fa-solid fa-atlas",
     order: Object.keys(controls.tokens.tools).length,
     button: true,
-    visible: game.user.isGM,
+    // visible: game.user.isGM,
     onChange: () => {
-      // Action to perform when clicked
-      ui.notifications.info("Custom tool clicked!");
+      // Store the browser instance in a global variable
+if (!window.compendiumBrowserInstance) {
+  window.compendiumBrowserInstance = new dnd5e.applications.CompendiumBrowser();
+}
+
+// Toggle open/close for the Compendium Browser
+if (window.compendiumBrowserInstance.rendered) {
+  window.compendiumBrowserInstance.close(); // Close if already open
+} else {
+  window.compendiumBrowserInstance.render(true); // Open if not already open
+}
     }
   };
 });
