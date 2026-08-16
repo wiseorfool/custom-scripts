@@ -66,185 +66,10 @@ Hooks.once("init", () => {
     default: true,
     requiresReload: true,
   });
-
-  // Critical Condition settings
-  game.settings.register(MODULE_ID, "criticalConditionName", {
-    name: "Critical Condition Name",
-    scope: "world",
-    config: true,
-    type: String,
-    default: "Critical",
-  });
-
-  game.settings.register(MODULE_ID, "criticalConditionIcon", {
-    name: "Critical Condition Icon",
-    scope: "world",
-    config: true,
-    type: String,
-    default: "icons/svg/skull.svg",
-    // `filePicker: "image"` tells Foundry to show a file browser button for this setting.
-    filePicker: "image"
-  });
-
-  // Bloodied Condition icon settings (per actor type)
-  game.settings.register(MODULE_ID, "bloodiedConditionIconPC", {
-    name: "Bloodied Icon (PC)",
-    scope: "world",
-    config: true,
-    type: String,
-    default: "icons/svg/blood.svg",
-    filePicker: "image"
-  });
-
-  game.settings.register(MODULE_ID, "bloodiedConditionIconNPC", {
-    name: "Bloodied Icon (NPC)",
-    scope: "world",
-    config: true,
-    type: String,
-    default: "icons/svg/blood.svg",
-    filePicker: "image"
-  });
-
-  // Bloodied override + thresholds
-  game.settings.register(MODULE_ID, "enableBloodiedOverride", {
-    name: "Enable Bloodied Icon Override",
-    hint: "If checked, the module will change the Bloodied icon instead of adding its own effect.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: true,
-  });
-
-  game.settings.register(MODULE_ID, "bloodiedThreshold", {
-    name: "Bloodied Threshold (%)",
-    hint: "Above this HP%, Bloodied will be removed (if override removal is enabled).",
-    scope: "world",
-    config: true,
-    type: Number,
-    default: 50,
-  });
-
-  // Critical threshold + auto-removal
-  game.settings.register(MODULE_ID, "criticalThreshold", {
-    name: "Critical Threshold (%)",
-    hint: "At or below this HP%, Critical is applied and Bloodied is removed.",
-    scope: "world",
-    config: true,
-    type: Number,
-    default: 25,
-  });
-
-  game.settings.register(MODULE_ID, "autoRemoveCriticalAboveThreshold", {
-    name: "Auto-Remove Critical Above Threshold",
-    hint: "Remove Critical when HP rises above the Critical threshold.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: true,
-  });
-
-  game.settings.register(MODULE_ID, "autoRemoveBloodiedAboveThreshold", {
-    name: "Auto-Remove Bloodied Above Threshold",
-    hint: "Remove Bloodied when HP rises above the Bloodied threshold.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: true,
-  });
-
   // Apply exhaustion rules
   applyExhaustionSetting();
 });
 
-// ========================================================================== //
-//
-//  STEP 3: REACTING TO GAME EVENTS (updateActor hook)
-//
-//  This section automates adding and removing conditions based on a
-//  character's hit points. We use the "updateActor" hook, which fires
-//  every time an actor's data changes.
-//
-// ========================================================================== //
-
-Hooks.on("updateActor", async (actor, update) => {
-  // This hook fires for *any* update. We only care about HP changes.
-  // This check prevents the code from running unnecessarily.
-  // The `?` is optional chaining: it stops if `update.system` or `update.system.attributes` is not present.
-  if (!update.system?.attributes?.hp) return;
-
-  // Get the actor's current and max HP.
-  const hp = actor.system.attributes.hp.value;
-  const maxHp = actor.system.attributes.hp.max;
-  // Calculate the HP percentage. We check for maxHp > 0 to prevent division by zero errors.
-  const hpPct = maxHp > 0 ? (hp / maxHp) * 100 : 0;
-
-  // --- Gather all our settings ---
-  // It's good practice to get all settings at the start of the function.
-  const criticalName = game.settings.get(MODULE_ID, "criticalConditionName");
-  const criticalIcon = game.settings.get(MODULE_ID, "criticalConditionIcon");
-
-  const bloodiedIconPC = game.settings.get(MODULE_ID, "bloodiedConditionIconPC");
-  const bloodiedIconNPC = game.settings.get(MODULE_ID, "bloodiedConditionIconNPC");
-
-  const enableBloodiedOverride = game.settings.get(MODULE_ID, "enableBloodiedOverride");
-  const bloodiedThreshold = game.settings.get(MODULE_ID, "bloodiedThreshold");
-  const criticalThreshold = game.settings.get(MODULE_ID, "criticalThreshold");
-  const autoRemoveCriticalAbove = game.settings.get(MODULE_ID, "autoRemoveCriticalAboveThreshold");
-  const autoRemoveBloodiedAbove = game.settings.get(MODULE_ID, "autoRemoveBloodiedAboveThreshold");
-
-  // --- Find existing effects on the actor ---
-  // The D&D 5e system has a built-in "Bloodied" status. We can find it by its label.
-  const bloodiedEffect = actor.effects.find(e => e.label === "Bloodied");
-
-  // For our custom "Critical" condition, we need a reliable way to find it.
-  // We add a special "flag" to the effect when we create it. This is the best
-  // way to attach module-specific data to any document in Foundry.
-  const criticalEffect = actor.effects.find(e => e.flags[MODULE_ID]?.condition === "critical");
-
-  // --- Main Logic ---
-
-  // If the actor is dead or dying, remove our conditions.
-  if (hp <= 0) {
-    // We must check if the effects exist before trying to delete them.
-    if (criticalEffect) await actor.deleteEmbeddedDocuments("ActiveEffect", [criticalEffect.id]);
-    if (bloodiedEffect) await actor.deleteEmbeddedDocuments("ActiveEffect", [bloodiedEffect.id]);
-    return;
-  }
-
-  // If HP is at or below the "critical" threshold...
-  if (hpPct <= criticalThreshold) {
-    // Remove Bloodied when Critical applies
-    if (bloodiedEffect) await actor.deleteEmbeddedDocuments("ActiveEffect", [bloodiedEffect.id]);
-
-    if (!criticalEffect) {
-      await actor.createEmbeddedDocuments("ActiveEffect", [{
-        label: criticalName,
-        icon: criticalIcon,
-        // Here we add our custom flag so we can find this effect later.
-        flags: { [MODULE_ID]: { condition: "critical" } }
-      }]);
-    }
-  } else if (autoRemoveCriticalAbove && criticalEffect) {
-    // Otherwise, if HP is above the threshold and the setting is on, remove Critical.
-    await actor.deleteEmbeddedDocuments("ActiveEffect", [criticalEffect.id]);
-  }
-
-  // If the Bloodied effect exists (the 5e system adds it automatically) and our override is on...
-  if (enableBloodiedOverride && bloodiedEffect && hpPct > criticalThreshold) {
-    const isNPC = actor.type === "npc";
-    const desiredIcon = isNPC ? bloodiedIconNPC : bloodiedIconPC;
-
-    if (bloodiedEffect.icon !== desiredIcon) {
-      await bloodiedEffect.update({ icon: desiredIcon });
-    }
-  }
-
-  // If the auto-remove setting is on and HP is above the bloodied threshold, remove it.
-  // This overrides the default 5e system behavior if the user wants it.
-  if (autoRemoveBloodiedAbove && bloodiedEffect && hpPct > bloodiedThreshold) {
-    await actor.deleteEmbeddedDocuments("ActiveEffect", [bloodiedEffect.id]);
-  }
-});
 
 // ========================================================================== //
 //
@@ -278,27 +103,6 @@ if (window.compendiumBrowserInstance.rendered) {
 }
     }
   };
-});
-
-Hooks.on("getSceneControlButtons", (controls) => {
-  controls.push({
-    name: "my-custom-category",
-    title: "My Custom Toolbar",
-    icon: "fa-solid fa-wand-magic-sparkles",
-    layer: "controls", // The canvas layer this button activates
-    visible: game.user.isGM,
-    tools: [
-      {
-        name: "my-first-tool",
-        title: "Activate Tool Effect",
-        icon: "fa-solid fa-bolt",
-        onClick: () => {
-          ui.notifications.info("Custom top-level tool activated!");
-        },
-        button: true // Makes it an instant-click action instead of a persistent toggle
-      }
-    ]
-  });
 });
 
 
@@ -421,7 +225,7 @@ function renderBarNumber(token, barName, barIndex) {
       dropShadow: true,
       dropShadowColor: "#000000",
       dropShadowBlur: 2,
-      dropShadowDistance: 0
+      dropShadowDistance: 1
     });
 
     // Create the actual PIXI.Text object.
@@ -477,3 +281,77 @@ function cleanUpBarText(token, barName) {
     existing.destroy();
   }
 }
+
+Hooks.once("init", () => {
+  // 1. Helper to generate repeatable pattern textures programmatically
+  function createPatternTexture(patternType, color = "#22c55e", size = 16) {
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 1.5;
+
+    if (patternType === "diagonal-stripes") {
+      ctx.beginPath();
+      ctx.moveTo(0, size);
+      ctx.lineTo(size, 0);
+      ctx.stroke();
+    } else if (patternType === "dots") {
+      ctx.beginPath();
+      ctx.arc(size / 2, size / 2, 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (patternType === "crosshatch") {
+      ctx.beginPath();
+      ctx.moveTo(0, 0); ctx.lineTo(size, size);
+      ctx.moveTo(size, 0); ctx.lineTo(0, size);
+      ctx.stroke();
+    }
+
+    return PIXI.Texture.from(canvas);
+  }
+
+  // 2. Preload pattern textures for each shape type
+  const patterns = {
+    rectangle: createPatternTexture("diagonal-stripes", "#38bdf8", 16), // Cyan stripes
+    polygon: createPatternTexture("crosshatch", "#f43f5e", 16),        // Rose grid
+    circle: createPatternTexture("dots", "#eab308", 12),               // Amber dots
+    ellipse: createPatternTexture("dots", "#eab308", 12)
+  };
+
+  // 3. Override Region rendering
+  if (CONFIG.Region?.objectClass) {
+    CONFIG.Region.objectClass.prototype._renderShapes = function() {
+      this.graphics.clear();
+
+      for (const shape of this.document.shapes) {
+        // Select texture pattern based on shape.type, fallback to default
+        const patternTexture = patterns[shape.type] || patterns.polygon;
+
+        // Use beginTextureFill with repetition/tiling
+        this.graphics.beginTextureFill({
+          texture: patternTexture,
+          alpha: 0.8
+        });
+
+        // Set matching stroke boundary
+        this.graphics.lineStyle(1.5, 0xffffff, 0.4);
+
+        // Draw shape geometry
+        if (shape.type === "rectangle") {
+          this.graphics.drawRect(shape.x, shape.y, shape.width, shape.height);
+        } else if (shape.type === "polygon") {
+          this.graphics.drawPolygon(shape.points);
+        } else if (shape.type === "circle") {
+          this.graphics.drawCircle(shape.x, shape.y, shape.radius);
+        } else if (shape.type === "ellipse") {
+          this.graphics.drawEllipse(shape.x, shape.y, shape.radiusX, shape.radiusY);
+        }
+
+        this.graphics.endFill();
+      }
+    };
+  }
+});
