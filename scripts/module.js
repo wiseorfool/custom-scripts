@@ -130,6 +130,18 @@ Hooks.once("init", () => {
     onChange: () => canvas.tokens?.draw() // Refresh map when changed
   });
 
+  // Add a setting to change the font family of the HP text.
+  game.settings.register(MODULE_ID, "fontFamily", {
+    name: "Font Family",
+    hint: "The font used for the numbers over the bar.",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: Object.keys(CONFIG.fontDefinitions || {}).reduce((acc, f) => ({ ...acc, [f]: f }), {}),
+    default: "Signika",
+    onChange: () => canvas.tokens?.draw()
+  });
+
   // Add a toggle setting to show "Current HP" vs "Current / Max HP".
   game.settings.register(MODULE_ID, "showMax", {
     name: "Show Max Value",
@@ -282,76 +294,34 @@ function cleanUpBarText(token, barName) {
   }
 }
 
-Hooks.once("init", () => {
-  // 1. Helper to generate repeatable pattern textures programmatically
-  function createPatternTexture(patternType, color = "#22c55e", size = 16) {
-    const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d");
 
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineWidth = 1.5;
+Hooks.on("refreshRegion", (region) => {
+  // 1. Check if the user is currently NOT on the regions layer
+  const isRegionsLayerActive = canvas.activeLayer?.options.name === "regions";
+  
+  if (!isRegionsLayerActive) {
+    // 2. Identify if the current user can see this region under vanilla rules
+    // (Respects "Always for GM" or "Always for Everyone" settings off-layer)
+    if (region.visible && region.mesh && region.border) {
+      
+      // 3. Set the region fill alpha to exactly 15%
+      region.mesh.alpha = 0.15;
 
-    if (patternType === "diagonal-stripes") {
-      ctx.beginPath();
-      ctx.moveTo(0, size);
-      ctx.lineTo(size, 0);
-      ctx.stroke();
-    } else if (patternType === "dots") {
-      ctx.beginPath();
-      ctx.arc(size / 2, size / 2, 2, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (patternType === "crosshatch") {
-      ctx.beginPath();
-      ctx.moveTo(0, 0); ctx.lineTo(size, size);
-      ctx.moveTo(size, 0); ctx.lineTo(0, size);
-      ctx.stroke();
-    }
+      // 4. Redraw the border to be a 4px stroke matching the fill color at 50% alpha
+      const fillColor = region.document.color || 0xFFFFFF; // Fallback to white if undefined
+      
+      region.border.clear();
+      region.border.lineStyle({
+        width: 4,
+        color: fillColor,
+        alpha: 0.50,
+        alignment: 0.5 // Centers the 4px stroke perfectly on the region edge boundary
+      });
 
-    return PIXI.Texture.from(canvas);
-  }
-
-  // 2. Preload pattern textures for each shape type
-  const patterns = {
-    rectangle: createPatternTexture("diagonal-stripes", "#38bdf8", 16), // Cyan stripes
-    polygon: createPatternTexture("crosshatch", "#f43f5e", 16),        // Rose grid
-    circle: createPatternTexture("dots", "#eab308", 12),               // Amber dots
-    ellipse: createPatternTexture("dots", "#eab308", 12)
-  };
-
-  // 3. Override Region rendering
-  if (CONFIG.Region?.objectClass) {
-    CONFIG.Region.objectClass.prototype._renderShapes = function() {
-      this.graphics.clear();
-
-      for (const shape of this.document.shapes) {
-        // Select texture pattern based on shape.type, fallback to default
-        const patternTexture = patterns[shape.type] || patterns.polygon;
-
-        // Use beginTextureFill with repetition/tiling
-        this.graphics.beginTextureFill({
-          texture: patternTexture,
-          alpha: 0.8
-        });
-
-        // Set matching stroke boundary
-        this.graphics.lineStyle(1.5, 0xffffff, 0.4);
-
-        // Draw shape geometry
-        if (shape.type === "rectangle") {
-          this.graphics.drawRect(shape.x, shape.y, shape.width, shape.height);
-        } else if (shape.type === "polygon") {
-          this.graphics.drawPolygon(shape.points);
-        } else if (shape.type === "circle") {
-          this.graphics.drawCircle(shape.x, shape.y, shape.radius);
-        } else if (shape.type === "ellipse") {
-          this.graphics.drawEllipse(shape.x, shape.y, shape.radiusX, shape.radiusY);
-        }
-
-        this.graphics.endFill();
+      // 5. Re-execute the shape drawing logic onto the modified border style
+      for ( const shape of region.shapes ) {
+        region.border.drawShape(shape);
       }
-    };
+    }
   }
 });
