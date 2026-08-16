@@ -280,6 +280,27 @@ if (window.compendiumBrowserInstance.rendered) {
   };
 });
 
+Hooks.on("getSceneControlButtons", (controls) => {
+  controls.push({
+    name: "my-custom-category",
+    title: "My Custom Toolbar",
+    icon: "fa-solid fa-wand-magic-sparkles",
+    layer: "controls", // The canvas layer this button activates
+    visible: game.user.isGM,
+    tools: [
+      {
+        name: "my-first-tool",
+        title: "Activate Tool Effect",
+        icon: "fa-solid fa-bolt",
+        onClick: () => {
+          ui.notifications.info("Custom top-level tool activated!");
+        },
+        button: true // Makes it an instant-click action instead of a persistent toggle
+      }
+    ]
+  });
+});
+
 
 // ========================================================================== //
 //
