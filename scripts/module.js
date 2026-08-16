@@ -221,13 +221,14 @@ function renderBarNumber(token, barName, barIndex) {
   // object for this bar already exists.
   let textSprite = barContainer.getChildByName(textObjectName);
   const fontSize = game.settings.get(MODULE_ID, "fontSize") || 12;
+  const fontFamiy = game.settings.get(MODULE_ID, "fontFamily") || "Signika";
 
   if (!textSprite) {
     // If it doesn't exist, create it.
     // A PIXI.TextStyle object defines the font, color, size, etc.
     // A thick stroke and drop shadow make the text readable over any color bar.
     const style = new PIXI.TextStyle({
-      fontFamily: "Signika, sans-serif",
+      fontFamily: fontFamiy,
       fontSize: fontSize,
       fontWeight: "bold",
       fill: "#ffffff",         // White text
