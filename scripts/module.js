@@ -189,6 +189,8 @@ Hooks.on("updateActor", async (actor, update) => {
   }
 });
 
+
+
 /**
  * SceneControls button injection for Foundry 14:
  * Adds a Compendium Browser button to the Tools controls.
@@ -210,61 +212,189 @@ Hooks.once("ready", () => {
     });
   });
 });
+const MODULE_ID = "custom-scripts";
+
+// Track our custom sub-toolbar states
+let templateSubBarActive = false;
+let activeSubTool = "select";
+
+Hooks.once("init", () => {
+  // Inject styling so the 3rd toolbar aligns cleanly next to the 2nd tool column
+  const style = document.createElement("style");
+  style.id = `${MODULE_ID}-styles`;
+  style.innerHTML = `
+    #scene-controls {
+      display: flex;
+      flex-direction: row;
+      gap: 8px;
+    }
+    #scene-controls-subtools {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      pointer-events: all;
+    }
+  `;
+  document.head.appendChild(style);
+});
 
 /**
- * Updates all tokens of an actor on the current scene to match the prototype token settings.
- * @param {Actor} actor The actor document to use for the update.
+ * 1. Register the toggle button inside Token Controls (v14 Record Object syntax)
  */
-async function updateSceneTokens(actor) {
-  if (!actor) return;
+Hooks.on("getSceneControlButtons", (controls) => {
+  if (!controls.tokens?.tools) return;
 
-  const tokens = actor.getActiveTokens();
-  if (!tokens.length) {
-    ui.notifications.info(`No active tokens for "${actor.name}" on the current scene.`);
+  controls.tokens.tools.measuredTemplateSubBar = {
+    name: "measuredTemplateSubBar",
+    title: "Measured Templates",
+    icon: "fa-solid fa-ruler-combined",
+    order: 99,
+    toggle: true,
+    active: templateSubBarActive,
+    onChange: (event, active) => {
+      templateSubBarActive = active;
+      if (!active && canvas.regions?.active) {
+        // Return to token layer when toggled off
+        canvas.tokens.activate({ tool: "select" });
+      }
+      ui.controls.render();
+    }
+  };
+});
+
+/**
+ * 2. Render the 3rd Sub-Toolbar when the toggle is active
+ */
+Hooks.on("renderSceneControls", (app, element) => {
+  // Remove existing sub-bar before re-evaluating
+  element.querySelector("#scene-controls-subtools")?.remove();
+
+  // If the user switched to Walls, Lighting, etc., turn off our sub-bar
+  const currentControl = ui.controls.control?.name;
+  if (currentControl !== "tokens" && currentControl !== "regions") {
+    templateSubBarActive = false;
     return;
   }
 
-  const updates = tokens.map(token => {
-    const updateData = foundry.utils.deepClone(actor.prototypeToken);
-    delete updateData.x;
-    delete updateData.y;
-    updateData._id = token.id;
-    return updateData;
-  });
+  if (!templateSubBarActive) return;
 
-  await canvas.scene.updateEmbeddedDocuments("Token", updates);
-  ui.notifications.info(`Updated ${tokens.length} token(s) for "${actor.name}".`);
+  // Define the 3rd toolbar tools matching v14 Region Tools
+  const subTools = [
+    { name: "select", title: "Select Template", icon: "fa-solid fa-arrow-pointer", tool: "select" },
+    { name: "rectangle", title: "Rectangle", icon: "fa-solid fa-vector-square", tool: "rectangle" },
+    { name: "circle", title: "Circle", icon: "fa-regular fa-circle", tool: "circle" },
+    { name: "cone", title: "Cone", icon: "fa-solid fa-wifi", tool: "cone" },
+    { name: "emanation", title: "Emanation", icon: "fa-solid fa-bullseye", tool: "emanation" },
+    { name: "line", title: "Line", icon: "fa-solid fa-grip-lines-vertical", tool: "line" }, // Note: v14 may also alias this as "ray"
+    { name: "ring", title: "Ring", icon: "fa-solid fa-ring", tool: "ring" },
+    { name: "clear", title: "Clear Unattached Templates", icon: "fa-solid fa-trash", button: true }
+  ];
+
+  const menu = document.createElement("menu");
+  menu.id = "scene-controls-subtools";
+  menu.className = "control-tools";
+
+  for (const t of subTools) {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `control ui-control tool ${t.button ? "button" : ""} ${(!t.button && activeSubTool === t.name) ? "active" : ""}`;
+    btn.dataset.subtool = t.name;
+    btn.dataset.tooltip = t.title;
+    btn.setAttribute("aria-label", t.title);
+    btn.innerHTML = `<i class="${t.icon}"></i>`;
+
+    btn.addEventListener("click", async (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+
+      if (t.name === "clear") {
+        await clearUnattachedTemplates();
+        return;
+      }
+
+      activeSubTool = t.name;
+      await activateRegionTemplateTool(t.tool);
+    });
+
+    li.appendChild(btn);
+    menu.appendChild(li);
+  }
+
+  // Append as the 3rd column inside #scene-controls
+  element.appendChild(menu);
+});
+
+/**
+ * 3. Activate the Region Layer in Measured Template Mode with the chosen shape
+ */
+async function activateRegionTemplateTool(toolName) {
+  const regionControls = ui.controls.controls.regions;
+  if (!regionControls) return;
+
+  // Verify exact tool key name (handles cases where "line" is keyed as "ray" in core)
+  let resolvedTool = toolName;
+  if (!regionControls.tools[resolvedTool] && toolName === "line" && regionControls.tools.ray) {
+    resolvedTool = "ray";
+  }
+
+  // Force Measured Template Mode toggle ON inside Region tools
+  const templateModeTool = Object.values(regionControls.tools).find(
+    t => t.toggle && (t.name.toLowerCase().includes("template") || t.title.includes("Template"))
+  );
+  
+  if (templateModeTool) {
+    templateModeTool.active = true;
+    if (typeof templateModeTool.onChange === "function") {
+      templateModeTool.onChange(new Event("change"), true);
+    }
+  }
+
+  // Activate the Region Layer and select the drawing/select tool
+  canvas.regions.activate({ tool: resolvedTool });
+  ui.controls.render();
 }
 
 /**
- * Adds a context menu option to the Actor Directory to apply prototype token settings to scene tokens.
- * @param {object[]} contextOptions The array of context menu options.
+ * 4. Delete only Template Regions that are NOT attached to a Token or Actor
  */
-function addUpdateSceneTokensContext(contextOptions) {
-  if (!game.user.isGM) return;
+async function clearUnattachedTemplates() {
+  if (!canvas.scene) return;
 
-  contextOptions.push({
-    name: `${MODULE_ID}.apply-prototype-to-scene`,
-    callback: (li) => {
-      const docId = li.data?.documentId
-        ?? li.data?.actorId
-        ?? li.dataset?.entryId
-        ?? li.dataset?.documentId
-        ?? li.dataset?.actorId
-        ?? li.dataset?.entityId;
-      if (docId) {
-        const doc = game.actors.get(docId);
-        console.debug(`Updating ${doc.name} scene tokens for:`, doc);
-        updateSceneTokens(doc);
-      }
-    },
-    icon: '<i class="fas fa-user-circle"></i>',
-    condition: () => {
-      return game.user.can("TOKEN_CREATE");
-    },
-  });
+  const toDelete = canvas.scene.regions.filter(region => {
+    // 1. Check if the region is attached to a Token/Actor (v14 core attachment & dnd5e v6 flags)
+    const hasCoreAttachment = Boolean(
+      region.attachment?.token || 
+      region.token || 
+      region.tokens?.size > 0 ||
+      region.shapes?.some(s => s.type === "emanation" && s.token)
+    );
+    const hasSystemAttachment = Boolean(
+      region.flags?.dnd5e?.attachedToken ||
+      region.flags?.dnd5e?.dependents?.length ||
+      region.flags?.dnd5e?.origin?.includes("Actor.")
+    );
+
+    if (hasCoreAttachment || hasSystemAttachment) return false;
+
+    // 2. Ensure we only clear "Measured Template" style regions, not map triggers/stairs!
+    // Template Mode sets highlightMode to "coverage", displays measurements, and adds no map behaviors.
+    const isTemplateRegion = (
+      region.displayMeasurements === true || 
+      region.highlightMode === "coverage" || 
+      Boolean(region.flags?.dnd5e?.spellLevel || region.flags?.dnd5e?.item)
+    ) && region.behaviors.size === 0;
+
+    return isTemplateRegion;
+  }).map(r => r.id);
+
+  if (toDelete.length > 0) {
+    await canvas.scene.deleteEmbeddedDocuments("Region", toDelete);
+    ui.notifications.info(`Cleared ${toDelete.length} unattached measured template(s).`);
+  } else {
+    ui.notifications.info("No unattached measured templates found to clear.");
+  }
 }
-
-Hooks.on("getActorDirectoryEntryContext", (html, contextOptions) => {
-  addUpdateSceneTokensContext(contextOptions);
-});
