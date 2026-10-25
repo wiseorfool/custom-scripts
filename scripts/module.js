@@ -1,216 +1,226 @@
+// ========================================================================== //
+//
+//  STEP 1: MODULE IDENTIFICATION
+//
+//  Every module needs a unique ID to prevent its settings and data from
+//  colliding with other modules. We'll define it here as a constant so we
+//  can reuse it easily throughout our code.
+//
+// ========================================================================== //
+
 const MODULE_ID = "custom-scripts";
 
-/**
- * Apply exhaustion recovery settings for D&D5e v3.x+ and legacy versions.
- */
-const applyExhaustionSetting = () => {
-  const disableRecovery = game.settings.get(MODULE_ID, "disableExhaustionRecovery");
 
-  const exhaustionValue = disableRecovery ? 0 : 1;
-  const exhaustionDeltaValue = disableRecovery ? 0 : -1;
+Hooks.on("getSceneControlButtons", (controls) => {
+  controls.tokens.tools.myTool = {
+    name: "myTool",
+    title: "Open Compendium Browser",
+    icon: "fa-solid fa-atlas",
+    order: Object.keys(controls.tokens.tools).length,
+    button: true,
+    // visible: game.user.isGM,
+    onChange: () => {
+      // Store the browser instance in a global variable
+if (!window.compendiumBrowserInstance) {
+  window.compendiumBrowserInstance = new dnd5e.applications.CompendiumBrowser();
+}
 
-  // D&D5e v3.x+ (Foundry 11–14)
-  if (foundry.utils.isNewerVersion("3.0.0", game.system.version)) {
-    CONFIG.DND5E.restRules.longRest.exhaustion = exhaustionValue;
-  } else {
-    // Legacy fallback
-    CONFIG.DND5E.restTypes.long.exhaustionDelta = exhaustionDeltaValue;
-  }
-};
+// Toggle open/close for the Compendium Browser
+if (window.compendiumBrowserInstance.rendered) {
+  window.compendiumBrowserInstance.close(); // Close if already open
+} else {
+  window.compendiumBrowserInstance.render(true); // Open if not already open
+}
+    }
+  };
+});
 
+
+// ========================================================================== //
+//
+//  FEATURE: NUMERIC RESOURCE BARS
+//
+//  This feature draws numeric text (e.g., "15/30") over the resource bars
+//  on tokens. It uses a technique called "monkey patching" to override
+//  Foundry's default drawing behavior.
+//
+// ========================================================================== //
+
+// We use the "init" hook again to set up the logic for this feature.
+// Foundry allows multiple functions to be attached to the same hook.
 Hooks.once("init", () => {
-  // Exhaustion setting
-  game.settings.register(MODULE_ID, "disableExhaustionRecovery", {
-    name: "Disable Exhaustion Recovery on Long Rest",
-    hint: "Characters will not recover exhaustion on long rest. Reload required.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: true,
-    requiresReload: true,
-  });
-
-  // Critical Condition settings
-  game.settings.register(MODULE_ID, "criticalConditionName", {
-    name: "Critical Condition Name",
-    scope: "world",
-    config: true,
-    type: String,
-    default: "Critical",
-  });
-
-  game.settings.register(MODULE_ID, "criticalConditionIcon", {
-    name: "Critical Condition Icon",
-    scope: "world",
-    config: true,
-    type: String,
-    default: "icons/svg/skull.svg",
-    filePicker: "image"
-  });
-
-  // Bloodied Condition icon settings (per actor type)
-  game.settings.register(MODULE_ID, "bloodiedConditionIconPC", {
-    name: "Bloodied Icon (PC)",
-    scope: "world",
-    config: true,
-    type: String,
-    default: "icons/svg/blood.svg",
-    filePicker: "image"
-  });
-
-  game.settings.register(MODULE_ID, "bloodiedConditionIconNPC", {
-    name: "Bloodied Icon (NPC)",
-    scope: "world",
-    config: true,
-    type: String,
-    default: "icons/svg/blood.svg",
-    filePicker: "image"
-  });
-
-  // Bloodied override + thresholds
-  game.settings.register(MODULE_ID, "enableBloodiedOverride", {
-    name: "Enable Bloodied Icon Override",
-    hint: "If checked, the module will change the Bloodied icon instead of adding its own effect.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: true,
-  });
-
-  game.settings.register(MODULE_ID, "bloodiedThreshold", {
-    name: "Bloodied Threshold (%)",
-    hint: "Above this HP%, Bloodied will be removed (if override removal is enabled).",
-    scope: "world",
+  // Add a setting in the Foundry menu so users can change the text size.
+  game.settings.register(MODULE_ID, "fontSize", {
+    name: "Font Size",
+    hint: "How big the numbers appear over the bar.",
+    scope: "client",
     config: true,
     type: Number,
-    default: 50,
+    default: 18,
+    onChange: () => canvas.tokens?.placeables.forEach(t => t.drawBars())
   });
 
-  // Critical threshold + auto-removal
-  game.settings.register(MODULE_ID, "criticalThreshold", {
-    name: "Critical Threshold (%)",
-    hint: "At or below this HP%, Critical is applied and Bloodied is removed.",
+  // Add a setting to change the font family of the HP text.
+  game.settings.register(MODULE_ID, "fontFamily", {
+    name: "Font Family",
+    hint: "The font used for the numbers over the bar.",
     scope: "world",
     config: true,
-    type: Number,
-    default: 25,
+    type: String,
+    choices: Object.keys(CONFIG.fontDefinitions || {}).reduce((acc, f) => ({ ...acc, [f]: f }), {}),
+    default: "Signika",
+    onChange: () => canvas.tokens?.placeables.forEach(t => t.drawBars())
   });
 
-  game.settings.register(MODULE_ID, "autoRemoveCriticalAboveThreshold", {
-    name: "Auto-Remove Critical Above Threshold",
-    hint: "Remove Critical when HP rises above the Critical threshold.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: true,
-  });
-
-  game.settings.register(MODULE_ID, "autoRemoveBloodiedAboveThreshold", {
-    name: "Auto-Remove Bloodied Above Threshold",
-    hint: "Remove Bloodied when HP rises above the Bloodied threshold.",
-    scope: "world",
+  // Add a toggle setting to show "Current HP" vs "Current / Max HP".
+  game.settings.register(MODULE_ID, "showMax", {
+    name: "Show Max Value",
+    hint: "Display 10/20 instead of just 10.",
+    scope: "client",
     config: true,
     type: Boolean,
     default: true,
+    onChange: () => canvas.tokens?.placeables.forEach(t => t.drawBars())
   });
 
-  // Apply exhaustion rules
-  applyExhaustionSetting();
+  // Turn on our custom drawing instructions
+  patchTokenDrawBars();
 });
 
 /**
- * HP-based condition automation:
- * - Uses D&D5e's own Bloodied condition, only changes icon.
- * - Removes Bloodied below Critical threshold.
- * - Applies/removes custom Critical condition.
+ * Replaces core Token.prototype.drawBars to inject custom numeric sprites.
  */
-Hooks.on("updateActor", async (actor, update) => {
-  if (!update.system?.attributes?.hp) return;
+function patchTokenDrawBars() {
+  const originalDrawBars = Token.prototype.drawBars;
 
-  const hp = actor.system.attributes.hp.value;
-  const maxHp = actor.system.attributes.hp.max;
-  const hpPct = maxHp > 0 ? (hp / maxHp) * 100 : 0;
+  Token.prototype.drawBars = function() {
+    originalDrawBars.call(this);
 
-  const criticalName = game.settings.get(MODULE_ID, "criticalConditionName");
-  const criticalIcon = game.settings.get(MODULE_ID, "criticalConditionIcon");
+    if (!this.actor || !this.hasActiveHUD) {
+      if (this.document.displayBars === CONST.TOKEN_DISPLAY_MODES.NONE) return;
+    }
 
-  const enableBloodiedOverride = game.settings.get(MODULE_ID, "enableBloodiedOverride");
-  const bloodiedThreshold = game.settings.get(MODULE_ID, "bloodiedThreshold");
-  const criticalThreshold = game.settings.get(MODULE_ID, "criticalThreshold");
-  const autoRemoveCriticalAbove = game.settings.get(MODULE_ID, "autoRemoveCriticalAboveThreshold");
-  const autoRemoveBloodiedAbove = game.settings.get(MODULE_ID, "autoRemoveBloodiedAboveThreshold");
+    renderBarNumber(this, "bar1", 0);
+    renderBarNumber(this, "bar2", 1);
+  };
+}
 
-  const bloodiedIconPC = game.settings.get(MODULE_ID, "bloodiedConditionIconPC");
-  const bloodiedIconNPC = game.settings.get(MODULE_ID, "bloodiedConditionIconNPC");
+/**
+ * Core drawing function that adds crisp text to token resource bars.
+ *
+ * @param {Token} token - The token object we're drawing on.
+ * @param {string} barName - The name of the bar attribute (e.g., "bar1").
+ * @param {number} barIndex - The index of the bar (0 for bottom, 1 for top).
+ */
+function renderBarNumber(token, barName, barIndex) {
+  const resource = token.document.getBarAttribute?.(barName);
 
-  // Existing D&D5e Bloodied effect (by label)
-  const bloodiedEffect = actor.effects.find(e => e.label === "Bloodied");
-
-  // Custom Critical effect
-  const criticalEffect = actor.effects.find(e => e.flags[MODULE_ID]?.condition === "critical");
-
-  // Dead → remove both
-  if (hp <= 0) {
-    if (criticalEffect) await actor.deleteEmbeddedDocuments("ActiveEffect", [criticalEffect.id]);
-    if (bloodiedEffect) await actor.deleteEmbeddedDocuments("ActiveEffect", [bloodiedEffect.id]);
+  if (!resource || resource.type !== "bar") {
+    cleanUpBarText(token, barName);
     return;
   }
 
-  // Critical at or below threshold
-  if (hpPct <= criticalThreshold) {
-    // Remove Bloodied when Critical applies
-    if (bloodiedEffect) await actor.deleteEmbeddedDocuments("ActiveEffect", [bloodiedEffect.id]);
+  // --- Text Content ---
+  const { value, max } = resource;
+  const showMax = game.settings.get(MODULE_ID, "showMax");
+  const displayText = showMax && max !== undefined ? `${value} / ${max}` : `${value}`;
 
-    if (!criticalEffect) {
-      await actor.createEmbeddedDocuments("ActiveEffect", [{
-        label: criticalName,
-        icon: criticalIcon,
-        flags: { [MODULE_ID]: { condition: "critical" } }
-      }]);
-    }
-  } else if (autoRemoveCriticalAbove && criticalEffect) {
-    // Remove Critical when HP rises above threshold
-    await actor.deleteEmbeddedDocuments("ActiveEffect", [criticalEffect.id]);
+  const textObjectName = `_numericText_${barName}`;
+  const barContainer = token.bars;
+  if (!barContainer) return;
+
+  let textSprite = barContainer.getChildByName(textObjectName);
+  const fontSize = game.settings.get(MODULE_ID, "fontSize") || 12;
+  const fontFamily = game.settings.get(MODULE_ID, "fontFamily") || "Signika";
+
+  if (!textSprite) {
+    const style = new PIXI.TextStyle({
+      fontFamily: fontFamily,
+      fontSize: fontSize,
+      fontWeight: "bold",
+      fill: "#ffffff",
+      stroke: "#000000",
+      strokeThickness: 2,
+      align: "center",
+      dropShadow: true,
+      dropShadowColor: "#000000",
+      dropShadowBlur: 2,
+      dropShadowDistance: 1
+    });
+
+    textSprite = new PIXI.Text(displayText, style);
+    textSprite.name = textObjectName;
+    textSprite.anchor.set(0.5, 0.5);
+
+    // FIX 1: Increase off-screen rasterization resolution to prevent pixelation
+    textSprite.resolution = Math.max(window.devicePixelRatio || 1, 2);
+
+    // FIX 2: Lock raster rendering to whole pixels to prevent blur at sub-pixel offsets
+    textSprite.roundPixels = true;
+
+    barContainer.addChild(textSprite);
+  } else {
+    // Keep cached sprite synced with updated values and settings
+    textSprite.text = displayText;
+    textSprite.style.fontSize = fontSize;
+    textSprite.style.fontFamily = fontFamily;
   }
 
-  // Bloodied icon override (only when Bloodied exists and HP > critical threshold)
-  if (enableBloodiedOverride && bloodiedEffect && hpPct > criticalThreshold) {
-    const isNPC = actor.type === "npc";
-    const desiredIcon = isNPC ? bloodiedIconNPC : bloodiedIconPC;
+  // --- Positioning ---
+  const barHeight = Math.max(canvas.dimensions.size / 12, 8);
+  const tokenWidth = token.w;
+  const tokenHeight = token.h;
 
-    if (bloodiedEffect.icon !== desiredIcon) {
-      await bloodiedEffect.update({ icon: desiredIcon });
-    }
-  }
+  // FIX 3: Snap positions to integers so odd dimensions don't sit on half-pixels
+  textSprite.x = Math.round(tokenWidth / 2);
 
-  // Optional: remove Bloodied above configured threshold
-  if (autoRemoveBloodiedAbove && bloodiedEffect && hpPct > bloodiedThreshold) {
-    await actor.deleteEmbeddedDocuments("ActiveEffect", [bloodiedEffect.id]);
+  if (barIndex === 0) {
+    textSprite.y = Math.round(tokenHeight - (barHeight / 2));
+  } else {
+    textSprite.y = Math.round(barHeight / 2);
   }
-});
+}
 
 
 
 /**
- * SceneControls button injection for Foundry 14:
- * Adds a Compendium Browser button to the Tools controls.
+ * Removes and destroys leftover text objects when a bar is removed.
+ *
+ * @param {Token} token - The token to clean up.
+ * @param {string} barName - The name of the bar to clean up.
  */
-Hooks.once("ready", () => {
-  Hooks.on("getSceneControlButtons", (controls) => {
-    const groups = controls.controls;
-    if (!Array.isArray(groups)) return;
+function cleanUpBarText(token, barName) {
+  const textObjectName = `_numericText_${barName}`;
+  const existing = token.bars?.getChildByName(textObjectName);
 
-    const toolsControl = groups.find(g => g.name === "tools");
-    if (!toolsControl) return;
+  if (existing) {
+    token.bars.removeChild(existing);
+    existing.destroy();
+  }
+}
 
-    toolsControl.tools.push({
-      name: "compendium-browser-button",
-      title: "Compendium Browser",
-      icon: "fas fa-atlas",
-      onClick: () => game.dnd5e.apps.compendiumBrowser.render(true),
-      button: true
-    });
-  });
+Hooks.on("refreshRegion", (region) => {
+  const isRegionsLayerActive = canvas.activeLayer?.options.name === "regions";
+  
+  if (!isRegionsLayerActive) {
+    if (region.visible && region.mesh && region.border) {
+      region.mesh.alpha = 0.15;
+
+      const fillColor = region.document.color || 0xFFFFFF;
+      
+      region.border.clear();
+      region.border.lineStyle({
+        width: 4,
+        color: fillColor,
+        alpha: 0.50,
+        alignment: 0.5
+      });
+
+      for (const shape of region.shapes) {
+        region.border.drawShape(shape);
+      }
+    }
+  }
 });
 const MODULE_ID = "custom-scripts";
 
