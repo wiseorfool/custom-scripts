@@ -18,6 +18,11 @@
   "styles": [
     "styles/module.css"
   ],
+  "documentTypes": {
+    "RegionBehavior": {
+      "styling": {}
+    }
+  },
   "url": "#{URL}#",
   "manifest": "#{MANIFEST}#",
   "download": "#{DOWNLOAD}#",
